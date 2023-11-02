@@ -25,22 +25,25 @@ def op_brk(_: "Uxn"):
 
 
 def op_lit(u: "Uxn"):
-    u.ws.push(u.mem[u.pc])
-    u.pc += 1
+    u.ws.push(u.mem[u.pc+1])
+    u.pc += 2
 
 
 def op_inc(u: "Uxn"):
     u.ws.push(u.ws.pop() + 1)
+    u.pc += 1
 
 
 def op_pop(u: "Uxn"):
     u.ws.pop()
+    u.pc += 1
 
 
 def op_nip(u: "Uxn"):
     top = u.ws.pop()
     u.ws.pop()
     u.ws.push(top)
+    u.pc += 1
 
 
 def op_swp(u: "Uxn"):
@@ -48,6 +51,7 @@ def op_swp(u: "Uxn"):
     bot = u.ws.pop()
     u.ws.push(top)
     u.ws.push(bot)
+    u.pc += 1
 
 
 def op_rot(u: "Uxn"):
@@ -57,12 +61,14 @@ def op_rot(u: "Uxn"):
     u.ws.push(bot)
     u.ws.push(top)
     u.ws.push(mid)
+    u.pc += 1
 
 
 def op_dup(u: "Uxn"):
     top = u.ws.pop()
     u.ws.push(top)
     u.ws.push(top)
+    u.pc += 1
 
 
 def op_ovr(u: "Uxn"):
@@ -71,57 +77,62 @@ def op_ovr(u: "Uxn"):
     u.ws.push(top)
     u.ws.push(bot)
     u.ws.push(bot)
+    u.pc += 1
 
 
 def op_equ(u: "Uxn"):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot == top))
+    u.pc += 1
 
 
 def op_neq(u: "Uxn"):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot != top))
+    u.pc += 1
 
 
 def op_gth(u: "Uxn"):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot > top))
+    u.pc += 1
 
 
 def op_lth(u: "Uxn"):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot < top))
+    u.pc += 1
 
 
 def op_jmp(u: "Uxn"):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
-    u.pc += top - 1
+    u.pc += top
 
 
 def op_jcn(u: "Uxn"):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     if u.ws.pop() != 0:
-        u.pc += top - 1
+        u.pc += top
 
 
 def op_jsr(u: "Uxn"):
     u.rs.extend((u.pc >> 8, u.pc & 255))
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
-    u.pc += top - 1
+    u.pc += top
 
 
 def op_sth(u: "Uxn"):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     u.rs.push(top)
-    u.pc += top - 1
+    u.pc += top
 
 
 OPS = {
@@ -184,7 +195,6 @@ class Uxn:
             else:
                 print()
 
-            self.pc += 1
             if op(self):
                 break
         print(self.ws)
