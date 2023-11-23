@@ -20,33 +20,58 @@ class FixedSizeStack(bytearray):
         return repr(self)
 
 
-def op_brk(_: "Uxn"):
-    return 1
+def op_imm(u: "Uxn", mode2, moder, modek):
+    match (mode2, moder, modek):
+        case (0,0,0):
+            return 1
+        case (1,0,0):
+            op_jci(u)
+        case (0,1,0):
+            op_jmi(u)
+        case (1,1,0):
+            op_jsi(u)
+        case (mode2,moder,1): 
+            op_lit(u, mode2, moder, modek)
 
+def op_jci(u: "Uxn"):
+    if u.ws.pop():
+        op_jmi(u)
+    else:
+        u.pc += 3
 
-def op_lit(u: "Uxn"):
-    u.ws.push(u.mem[u.pc+1])
+def op_jmi(u: "Uxn"):
+        (hi, low) = u.mem[u.pc+1:u.pc+2]
+        u.pc += (hi << 8) | low
+
+def op_jsi(u: "Uxn"):
+    u.rs.push(u.pc+2)
+    op_jmi(u)
+
+def op_lit(u: "Uxn", mode2, moder, modek):
+    lit = u.mem[u.pc+1:u.pc+2+mode2]
+    s = u.rs if moder else u.ws
+    s.extend(lit)
     u.pc += 2
 
 
-def op_inc(u: "Uxn"):
+def op_inc(u: "Uxn", mode2, moder, modek):
     u.ws.push(u.ws.pop() + 1)
     u.pc += 1
 
 
-def op_pop(u: "Uxn"):
+def op_pop(u: "Uxn", mode2, moder, modek):
     u.ws.pop()
     u.pc += 1
 
 
-def op_nip(u: "Uxn"):
+def op_nip(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     u.ws.pop()
     u.ws.push(top)
     u.pc += 1
 
 
-def op_swp(u: "Uxn"):
+def op_swp(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(top)
@@ -54,7 +79,7 @@ def op_swp(u: "Uxn"):
     u.pc += 1
 
 
-def op_rot(u: "Uxn"):
+def op_rot(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     mid = u.ws.pop()
     bot = u.ws.pop()
@@ -64,14 +89,14 @@ def op_rot(u: "Uxn"):
     u.pc += 1
 
 
-def op_dup(u: "Uxn"):
+def op_dup(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     u.ws.push(top)
     u.ws.push(top)
     u.pc += 1
 
 
-def op_ovr(u: "Uxn"):
+def op_ovr(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(top)
@@ -80,55 +105,55 @@ def op_ovr(u: "Uxn"):
     u.pc += 1
 
 
-def op_equ(u: "Uxn"):
+def op_equ(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot == top))
     u.pc += 1
 
 
-def op_neq(u: "Uxn"):
+def op_neq(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot != top))
     u.pc += 1
 
 
-def op_gth(u: "Uxn"):
+def op_gth(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot > top))
     u.pc += 1
 
 
-def op_lth(u: "Uxn"):
+def op_lth(u: "Uxn", mode2, moder, modek):
     top = u.ws.pop()
     bot = u.ws.pop()
     u.ws.push(int(bot < top))
     u.pc += 1
 
 
-def op_jmp(u: "Uxn"):
+def op_jmp(u: "Uxn", mode2, moder, modek):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     u.pc += top
 
 
-def op_jcn(u: "Uxn"):
+def op_jcn(u: "Uxn", mode2, moder, modek):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     if u.ws.pop() != 0:
         u.pc += top
 
 
-def op_jsr(u: "Uxn"):
+def op_jsr(u: "Uxn", mode2, moder, modek):
     u.rs.extend((u.pc >> 8, u.pc & 255))
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     u.pc += top
 
 
-def op_sth(u: "Uxn"):
+def op_sth(u: "Uxn", mode2, moder, modek):
     (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
     u.ws.pop()
     u.rs.push(top)
@@ -136,7 +161,7 @@ def op_sth(u: "Uxn"):
 
 
 OPS = {
-    0x00: op_brk,
+    0x00: op_imm,
     0x01: op_inc,
     0x02: op_pop,
     0x03: op_nip,
@@ -180,22 +205,13 @@ class Uxn:
         while True:
             op_mode_code = self.mem[self.pc]
             op_code = op_mode_code & 0x1f
-            mode2 = op_mode_code & 0x20
-            moder = op_mode_code & 0x40
-            modek = op_mode_code & 0x80
-            if op_code:
-                if modek:
-                    op=op_lit
-            else:
-                op = OPS[op_code]
+            mode2 = op_mode_code >> 5 & 1
+            moder = op_mode_code >> 6 & 1
+            modek = op_mode_code >> 7 & 1
+            op = OPS[op_code]
             print(self.ws)
-            print(hex(self.pc), ":", hex(self.mem[self.pc]), op.__name__, end="")
-            if op is op_lit:
-                print(" ", hex(self.mem[self.pc + 1]))
-            else:
-                print()
-
-            if op(self):
+            print(hex(self.pc), ":", hex(self.mem[self.pc]), op.__name__, f"{mode2=} {moder=} {modek=}")
+            if op(self, mode2, moder, modek):
                 break
         print(self.ws)
 
