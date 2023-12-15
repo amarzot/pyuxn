@@ -1,7 +1,9 @@
 #!python3
 
-import sys
+import logging
+import pprint
 import struct
+import sys
 
 
 class FixedSizeStack(bytearray):
@@ -19,8 +21,60 @@ class FixedSizeStack(bytearray):
     def __str__(self) -> str:
         return repr(self)
 
+class Uxn:
+    RESET = 0x100
 
-def op_imm(u: "Uxn", mode2, moder, modek):
+    def __init__(self) -> None:
+        self.pc = 0
+        self.mem = bytearray(0x10_000)
+        self.dev = bytearray(0x100)
+        self.ws = FixedSizeStack(0x100)
+        self.rs = FixedSizeStack(0x100)
+
+def spop(s: FixedSizeStack):
+    r = struct.unpack_from("@b", s, len(s) - 1)[0]
+    s.pop()
+    return r
+
+def ushort_peek(ba: bytearray, offset: int) -> int:
+    return struct.unpack_from(">H", ba, offset)[0]
+
+def sshort_peek(ba: bytearray, offset: int) -> int:
+    return struct.unpack_from(">h", ba, offset)[0]
+
+def ushort_pop(s: FixedSizeStack) -> int:
+    r = ushort_peek(s, len(s)-2)
+    s.pop()
+    s.pop()
+    return r
+
+def sshort_pop(s: FixedSizeStack) -> int:
+    r = sshort_peek(s, len(s)-2)
+    s.pop()
+    s.pop()
+    return r
+
+# Console Device
+ 
+CONSOLE_DEVICE = 0x10
+ConsoleVectorPtr = 0x10
+
+CONSOLE_WRITE_PORT= 0x8
+ConsoleNoQueue = 0
+ConsoleStdIn = 1
+ConsoleArg = 2
+ConsoleArgSpacer = 3
+ConsoleArgEnd = 4
+
+def console_device(port: int, value: int):
+    if port == CONSOLE_WRITE_PORT:
+        sys.stdout.write(chr(value))
+    else:
+        raise ValueError(f"Unknown console port: {port}")
+
+
+# Ops
+def op_imm(u: Uxn, mode2, moder, modek):
     match (mode2, moder, modek):
         case (0,0,0):
             return 1
@@ -33,131 +87,181 @@ def op_imm(u: "Uxn", mode2, moder, modek):
         case (mode2,moder,1): 
             op_lit(u, mode2, moder, modek)
 
-def op_jci(u: "Uxn"):
+def op_jci(u: Uxn):
     if u.ws.pop():
-        op_jmi(u)
-    else:
-        u.pc += 3
-
-def op_jmi(u: "Uxn"):
-        (hi, low) = u.mem[u.pc+1:u.pc+2]
-        u.pc += (hi << 8) | low
-
-def op_jsi(u: "Uxn"):
-    u.rs.push(u.pc+2)
-    op_jmi(u)
-
-def op_lit(u: "Uxn", mode2, moder, modek):
-    lit = u.mem[u.pc+1:u.pc+2+mode2]
-    s = u.rs if moder else u.ws
-    s.extend(lit)
+        u.pc += sshort_peek(u.mem, u.pc)
     u.pc += 2
 
+def op_jmi(u: Uxn):
+    u.pc += (u.mem[u.pc] << 8) + u.mem[u.pc+1] + 2
 
-def op_inc(u: "Uxn", mode2, moder, modek):
-    u.ws.push(u.ws.pop() + 1)
-    u.pc += 1
+def op_jsi(u: Uxn):
+    offset_ptr = u.pc
+    u.pc += 2
+    u.rs.push(u.pc >> 8)
+    u.rs.push(u.pc & 0xff)
+    offset = (u.mem[offset_ptr] << 8) + u.mem[offset_ptr+1]
+    u.pc += offset
 
-
-def op_pop(u: "Uxn", mode2, moder, modek):
-    u.ws.pop()
-    u.pc += 1
-
-
-def op_nip(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    u.ws.pop()
-    u.ws.push(top)
-    u.pc += 1
-
-
-def op_swp(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(top)
-    u.ws.push(bot)
-    u.pc += 1
+def op_lit(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    pc = u.pc+1+mode2
+    lit = u.mem[u.pc:pc]
+    s.extend(lit)
+    u.pc = pc
 
 
-def op_rot(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    mid = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(bot)
-    u.ws.push(top)
-    u.ws.push(mid)
-    u.pc += 1
+def op_inc(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    if mode2:
+        x = s.pop() + (s.pop() << 8) + 1
+        s.push(x >> 8)
+        s.push(x & 0xff)
+    else:
+        s.push(x + 1)
 
 
-def op_dup(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    u.ws.push(top)
-    u.ws.push(top)
-    u.pc += 1
+def op_pop(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    s.pop()
+    if mode2:
+        s.pop()
 
 
-def op_ovr(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(top)
-    u.ws.push(bot)
-    u.ws.push(bot)
-    u.pc += 1
+def op_nip(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    s.pop()
+    s.push(top)
 
 
-def op_equ(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(int(bot == top))
-    u.pc += 1
+def op_swp(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(top)
+    s.push(bot)
 
 
-def op_neq(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(int(bot != top))
-    u.pc += 1
+def op_rot(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    mid = s.pop()
+    bot = s.pop()
+    s.push(bot)
+    s.push(top)
+    s.push(mid)
 
 
-def op_gth(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(int(bot > top))
-    u.pc += 1
+def op_dup(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    s.push(top)
+    s.push(top)
 
 
-def op_lth(u: "Uxn", mode2, moder, modek):
-    top = u.ws.pop()
-    bot = u.ws.pop()
-    u.ws.push(int(bot < top))
-    u.pc += 1
+def op_ovr(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(top)
+    s.push(bot)
+    s.push(bot)
 
 
-def op_jmp(u: "Uxn", mode2, moder, modek):
-    (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
-    u.ws.pop()
-    u.pc += top
+def op_equ(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(int(bot == top))
 
 
-def op_jcn(u: "Uxn", mode2, moder, modek):
-    (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
-    u.ws.pop()
-    if u.ws.pop() != 0:
+def op_neq(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(int(bot != top))
+
+
+def op_gth(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(int(bot > top))
+
+
+def op_lth(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    top = s.pop()
+    bot = s.pop()
+    s.push(int(bot < top))
+
+
+def op_jmp(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    if mode2:
+        u.pc = s.pop() + (s.pop() << 8)
+    else:
+        (top,) = struct.unpack_from("@b", s, len(s) - 1)
+        s.pop()
         u.pc += top
 
 
-def op_jsr(u: "Uxn", mode2, moder, modek):
-    u.rs.extend((u.pc >> 8, u.pc & 255))
-    (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
-    u.ws.pop()
-    u.pc += top
+def op_jcn(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    (top,) = struct.unpack_from("@b", s, len(s) - 1)
+    s.pop()
+    if s.pop() != 0:
+        u.pc += top
 
 
-def op_sth(u: "Uxn", mode2, moder, modek):
-    (top,) = struct.unpack_from("@b", u.ws, len(u.ws) - 1)
-    u.ws.pop()
-    u.rs.push(top)
-    u.pc += top
+def op_jsr(u: Uxn, mode2, moder, modek):
+    s1,s2 = (u.rs, u.ws) if moder else ( u.ws, u.rs)
+    s2.extend((u.pc >> 8, u.pc & 255))
+    u.pc = ushort_pop(s1) if mode2 else u.pc + spop(s1)
+
+
+def op_sth(u: Uxn, mode2, moder, modek):
+    s1,s2 = (u.rs, u.ws) if moder else ( u.ws, u.rs)
+    top = s1.pop()
+    if mode2:
+        s2.push(s1.pop())
+    s2.push(top)
+
+def op_lda(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws 
+    if modek:
+        addr = s[-1] + (s[-2] << 8)
+    else:
+        addr = s.pop() + (s.pop() << 8)
+    s.push(u.mem[addr])
+    if mode2:
+        s.push(u.mem[addr + 1])
+    
+
+def op_sta(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    addr = s.pop() + (s.pop() << 8)
+    if mode2:
+        s2.push(s1.pop())
+    s2.push(top)
+
+def op_deo(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    device_port = s.pop()
+    device = device_port & 0xf0
+    port = device_port & 0xf
+    if device == CONSOLE_DEVICE:
+        console_device(device_port & 0xf, s.pop())
+    else:
+        raise NotImplementedError
+
+def op_add(u: Uxn, mode2, moder, modek):
+    s = u.rs if moder else u.ws
+    x = s.pop()
+    y = s.pop()
+    s.push(x+y)
+
 
 
 OPS = {
@@ -177,57 +281,95 @@ OPS = {
     0x0D: op_jcn,
     0x0E: op_jsr,
     0x0F: op_sth,
+    0x14: op_lda,
+    0x15: op_sta,
+    0x17: op_deo,
+    0x18: op_add,
 }
 
 
-class Uxn:
-    def __init__(self) -> None:
-        self.mem = bytearray(64000)
-        self.pc = 0
-        self.ws = FixedSizeStack(256)
-        self.rs = FixedSizeStack(256)
 
-    def dump_state(self):
-        return {
-            "mem": " ".join(hex(i) for i in self.mem[self.pc-3:self.pc+3]),
-            "pc": self.pc,
-            "ws": self.ws,
-            "rs": self.rs,
-        }
+def dump_state(u: Uxn):
+    return {
+        "mem": " ".join(hex(i) for i in u.mem[u.pc-3:u.pc+4]),
+        "dev": {"console": " ".join(hex(i) for i in u.dev[0x10:0x20])},
+        "pc": hex(u.pc),
+        "ws": u.ws,
+        "rs": u.rs,
+    }
 
-    def load_image(self, prog: bytes):
-        if len(prog) > len(self.mem) - 0x100:
-            raise ValueError("Program too large")
-        self.mem[0x100 : len(prog)] = prog
+def load_image(u: Uxn, prog: bytes):
+    if len(prog) > len(u.mem) - 0x100:
+        raise ValueError("Program too large")
+    u.mem[0x100 : len(prog)] = prog
 
-    def run(self):
-        self.pc = 0x100
-        while True:
-            op_mode_code = self.mem[self.pc]
-            op_code = op_mode_code & 0x1f
-            mode2 = op_mode_code >> 5 & 1
-            moder = op_mode_code >> 6 & 1
-            modek = op_mode_code >> 7 & 1
-            op = OPS[op_code]
-            print(self.ws)
-            print(hex(self.pc), ":", hex(self.mem[self.pc]), op.__name__, f"{mode2=} {moder=} {modek=}")
-            if op(self, mode2, moder, modek):
-                break
-        print(self.ws)
+def run_vector(u: Uxn, pc):
+    u.pc = pc
+    while True:
+        op_mode_code = u.mem[u.pc]
+        if exec_op(u, op_mode_code): 
+            break
 
-    def exec_op(self, op_code):
-        OPS[op_code](self)
-        print(self.ws)
+def exec_op(u: Uxn, op_mode_code):
+    op_code = op_mode_code & 0x1f
+    mode2 = op_mode_code >> 5 & 1
+    moder = op_mode_code >> 6 & 1
+    modek = op_mode_code >> 7 & 1
+    op = OPS[op_code]
+    if op_code:
+        op_name = op.__name__
+    elif modek:
+        op_name = "op_lit"
+    elif mode2 and moder:
+        op_name = "op_jsi"
+    elif moder:
+        op_name = "op_jmr"
+    elif mode2:
+        op_name = "op_jci"
+    elif not (op_code or mode2 or moder or modek):
+        op_name = "op_brk"
+    else:
+        raise ValueError("Unreachable")
 
+    logging.debug(f"{u.rs}, {u.ws}")
+    logging.debug(f"{hex(u.pc)}: {hex(u.mem[u.pc])} {op_name} {mode2=} {moder=} {modek=}")
+    u.pc += 1
+    return op(u, mode2, moder, modek)
+ 
+
+def set_argc(u: Uxn):
+    u.dev[0x17] = len(sys.argv) - 1
+
+def forward_args(u: Uxn):
+    for i, arg in enumerate(sys.argv):
+        for char in arg:
+            u.dev[0x12] = ord(char)
+            u.dev[0x17] = ConsoleArg
+            run_vector(u, u.mem[1])
+        u.dev[0x12] = ord(char)
+        isLast = i + 1 == len(sys.argv)
+        u.dev[0x17] = ConsoleArgEnd if isLast else ConsoleArgSpacer
+        run_vector(u, ushort_peek(u.dev, ConsoleVectorPtr))
+
+# Main
 
 def main():
-    uxn = Uxn()
-    with open(sys.argv[1], "rb") as rom:
-        uxn.load_image(rom.read())
+    u = Uxn()
+    arg = sys.argv[1]
+    if arg == "-v":
+        logging.basicConfig(level=logging.DEBUG)
+        program = sys.argv[2]
+    else:
+        program = arg
+
+    with open(program, "rb") as rom:
+        load_image(u, rom.read())
     try:
-        uxn.run()
+        set_argc(u)
+        # forward_args(u)
+        run_vector(u, Uxn.RESET)
     except Exception as e:
-        print(uxn.dump_state())
+        pprint.pprint(dump_state(u))
         raise e
 
 
