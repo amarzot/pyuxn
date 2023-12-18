@@ -93,7 +93,7 @@ def op_jci(u: Uxn):
     u.pc += 2
 
 def op_jmi(u: Uxn):
-    u.pc += (u.mem[u.pc] << 8) + u.mem[u.pc+1] + 2
+    u.pc += sshort_peek(u.mem,u.pc) + 2
 
 def op_jsi(u: Uxn):
     offset_ptr = u.pc
