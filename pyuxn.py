@@ -16,7 +16,7 @@ class FixedSizeStack(bytearray):
         super().append(b)
 
     def __repr__(self) -> str:
-        return f"[{', '.join(hex(i) for i in self)}]"
+        return f"[{', '.join(f'#{i:02x}' for i in self)}]"
 
     def __str__(self) -> str:
         return repr(self)
@@ -74,28 +74,28 @@ def console_device(port: int, value: int):
 
 
 # Ops
-def op_imm(u: Uxn, mode2, moder, modek):
+def imm(u: Uxn, mode2, moder, modek):
     match (mode2, moder, modek):
         case (0,0,0):
             return 1
         case (1,0,0):
-            op_jci(u)
+            jci(u)
         case (0,1,0):
-            op_jmi(u)
+            jmi(u)
         case (1,1,0):
-            op_jsi(u)
+            jsi(u)
         case (mode2,moder,1): 
-            op_lit(u, mode2, moder, modek)
+            lit(u, mode2, moder, modek)
 
-def op_jci(u: Uxn):
+def jci(u: Uxn):
     if u.ws.pop():
         u.pc += sshort_peek(u.mem, u.pc)
     u.pc += 2
 
-def op_jmi(u: Uxn):
+def jmi(u: Uxn):
     u.pc += sshort_peek(u.mem,u.pc) + 2
 
-def op_jsi(u: Uxn):
+def jsi(u: Uxn):
     offset_ptr = u.pc
     u.pc += 2
     u.rs.push(u.pc >> 8)
@@ -103,7 +103,7 @@ def op_jsi(u: Uxn):
     offset = (u.mem[offset_ptr] << 8) + u.mem[offset_ptr+1]
     u.pc += offset
 
-def op_lit(u: Uxn, mode2, moder, modek):
+def lit(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     pc = u.pc+1+mode2
     lit = u.mem[u.pc:pc]
@@ -111,7 +111,7 @@ def op_lit(u: Uxn, mode2, moder, modek):
     u.pc = pc
 
 
-def op_inc(u: Uxn, mode2, moder, modek):
+def inc(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     if mode2:
         x = s.pop() + (s.pop() << 8) + 1
@@ -121,21 +121,21 @@ def op_inc(u: Uxn, mode2, moder, modek):
         s.push(x + 1)
 
 
-def op_pop(u: Uxn, mode2, moder, modek):
+def pop(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     s.pop()
     if mode2:
         s.pop()
 
 
-def op_nip(u: Uxn, mode2, moder, modek):
+def nip(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     s.pop()
     s.push(top)
 
 
-def op_swp(u: Uxn, mode2, moder, modek):
+def swp(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
@@ -143,7 +143,7 @@ def op_swp(u: Uxn, mode2, moder, modek):
     s.push(bot)
 
 
-def op_rot(u: Uxn, mode2, moder, modek):
+def rot(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     mid = s.pop()
@@ -153,14 +153,14 @@ def op_rot(u: Uxn, mode2, moder, modek):
     s.push(mid)
 
 
-def op_dup(u: Uxn, mode2, moder, modek):
+def dup(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     s.push(top)
     s.push(top)
 
 
-def op_ovr(u: Uxn, mode2, moder, modek):
+def ovr(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
@@ -169,35 +169,35 @@ def op_ovr(u: Uxn, mode2, moder, modek):
     s.push(bot)
 
 
-def op_equ(u: Uxn, mode2, moder, modek):
+def equ(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
     s.push(int(bot == top))
 
 
-def op_neq(u: Uxn, mode2, moder, modek):
+def neq(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
     s.push(int(bot != top))
 
 
-def op_gth(u: Uxn, mode2, moder, modek):
+def gth(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
     s.push(int(bot > top))
 
 
-def op_lth(u: Uxn, mode2, moder, modek):
+def lth(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     top = s.pop()
     bot = s.pop()
     s.push(int(bot < top))
 
 
-def op_jmp(u: Uxn, mode2, moder, modek):
+def jmp(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     if mode2:
         u.pc = s.pop() + (s.pop() << 8)
@@ -207,7 +207,7 @@ def op_jmp(u: Uxn, mode2, moder, modek):
         u.pc += top
 
 
-def op_jcn(u: Uxn, mode2, moder, modek):
+def jcn(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     (top,) = struct.unpack_from("@b", s, len(s) - 1)
     s.pop()
@@ -215,20 +215,20 @@ def op_jcn(u: Uxn, mode2, moder, modek):
         u.pc += top
 
 
-def op_jsr(u: Uxn, mode2, moder, modek):
+def jsr(u: Uxn, mode2, moder, modek):
     s1,s2 = (u.rs, u.ws) if moder else ( u.ws, u.rs)
     s2.extend((u.pc >> 8, u.pc & 255))
     u.pc = ushort_pop(s1) if mode2 else u.pc + spop(s1)
 
 
-def op_sth(u: Uxn, mode2, moder, modek):
+def sth(u: Uxn, mode2, moder, modek):
     s1,s2 = (u.rs, u.ws) if moder else ( u.ws, u.rs)
     top = s1.pop()
     if mode2:
         s2.push(s1.pop())
     s2.push(top)
 
-def op_lda(u: Uxn, mode2, moder, modek):
+def lda(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws 
     if modek:
         addr = s[-1] + (s[-2] << 8)
@@ -239,14 +239,14 @@ def op_lda(u: Uxn, mode2, moder, modek):
         s.push(u.mem[addr + 1])
     
 
-def op_sta(u: Uxn, mode2, moder, modek):
+def sta(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     addr = s.pop() + (s.pop() << 8)
     if mode2:
         s2.push(s1.pop())
     s2.push(top)
 
-def op_deo(u: Uxn, mode2, moder, modek):
+def deo(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     device_port = s.pop()
     device = device_port & 0xf0
@@ -256,7 +256,7 @@ def op_deo(u: Uxn, mode2, moder, modek):
     else:
         raise NotImplementedError
 
-def op_add(u: Uxn, mode2, moder, modek):
+def add(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
     x = s.pop()
     y = s.pop()
@@ -265,26 +265,26 @@ def op_add(u: Uxn, mode2, moder, modek):
 
 
 OPS = {
-    0x00: op_imm,
-    0x01: op_inc,
-    0x02: op_pop,
-    0x03: op_nip,
-    0x04: op_swp,
-    0x05: op_rot,
-    0x06: op_dup,
-    0x07: op_ovr,
-    0x08: op_equ,
-    0x09: op_neq,
-    0x0A: op_gth,
-    0x0B: op_lth,
-    0x0C: op_jmp,
-    0x0D: op_jcn,
-    0x0E: op_jsr,
-    0x0F: op_sth,
-    0x14: op_lda,
-    0x15: op_sta,
-    0x17: op_deo,
-    0x18: op_add,
+    0x00: imm,
+    0x01: inc,
+    0x02: pop,
+    0x03: nip,
+    0x04: swp,
+    0x05: rot,
+    0x06: dup,
+    0x07: ovr,
+    0x08: equ,
+    0x09: neq,
+    0x0A: gth,
+    0x0B: lth,
+    0x0C: jmp,
+    0x0D: jcn,
+    0x0E: jsr,
+    0x0F: sth,
+    0x14: lda,
+    0x15: sta,
+    0x17: deo,
+    0x18: add,
 }
 
 
@@ -319,20 +319,20 @@ def exec_op(u: Uxn, op_mode_code):
     if op_code:
         op_name = op.__name__
     elif modek:
-        op_name = "op_lit"
+        op_name = "LIT"
     elif mode2 and moder:
-        op_name = "op_jsi"
+        op_name = "JSI"
     elif moder:
-        op_name = "op_jmi"
+        op_name = "JMI"
     elif mode2:
-        op_name = "op_jci"
+        op_name = "JCI"
     elif not (op_code or mode2 or moder or modek):
-        op_name = "op_brk"
+        op_name = "BRK"
     else:
         raise ValueError("Unreachable")
 
     logging.debug(f"{u.rs}, {u.ws}")
-    logging.debug(f"{hex(u.pc)}: {hex(u.mem[u.pc])} {op_name} {mode2=} {moder=} {modek=}")
+    logging.debug(f"#{u.pc:04x}: #{u.mem[u.pc]:02x} {op_name.upper()}{'2' if mode2 else ''}{'r' if moder else ''}{'k' if modek else ''}")
     u.pc += 1
     return op(u, mode2, moder, modek)
  
