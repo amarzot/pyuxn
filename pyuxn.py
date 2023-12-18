@@ -323,7 +323,7 @@ def exec_op(u: Uxn, op_mode_code):
     elif mode2 and moder:
         op_name = "op_jsi"
     elif moder:
-        op_name = "op_jmr"
+        op_name = "op_jmi"
     elif mode2:
         op_name = "op_jci"
     elif not (op_code or mode2 or moder or modek):
