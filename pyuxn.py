@@ -185,16 +185,33 @@ def neq(u: Uxn, mode2, moder, modek):
 
 def gth(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
-    top = s.pop()
-    bot = s.pop()
-    s.push(int(bot > top))
+    if modek:
+        if mode2:
+            res = ushort_peek(s, len(s)-2) > ushort_peek(s,len(s)-4)
+        else:
+            res = s[-1] > s[-2]
+    else:
+        if mode2:
+            res = ushort_pop(s) > ushort_pop(s)
+        else:
+            res = s.pop() > s.pop()
+    s.push(int(res))
 
 
 def lth(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
-    top = s.pop()
-    bot = s.pop()
-    s.push(int(bot < top))
+    if modek:
+        if mode2:
+            res = ushort_peek(s, len(s)-2) < ushort_peek(s,len(s)-4)
+        else:
+            res = s[-1] < s[-2]
+    else:
+        if mode2:
+            res = ushort_pop(s) < ushort_pop(s)
+        else:
+            res = s.pop() < s.pop()
+
+    s.push(int(res))
 
 
 def jmp(u: Uxn, mode2, moder, modek):
@@ -241,10 +258,10 @@ def lda(u: Uxn, mode2, moder, modek):
 
 def sta(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
-    addr = s.pop() + (s.pop() << 8)
+    addr = ushort_pop(s)
+    u.mem[addr + mode2] = s.pop()
     if mode2:
-        s2.push(s1.pop())
-    s2.push(top)
+        u.mem[addr] = s.pop()
 
 def deo(u: Uxn, mode2, moder, modek):
     s = u.rs if moder else u.ws
