@@ -1,9 +1,9 @@
 # pyuxn
 
-An implementation of the Uxn Virtual Machine in Python
+An implementation of the Uxn Virtual Machine in Python with basic support for Varvara devices
 
 # Quick Start
 ```shell
-uxnasm prog.tal prog.rom
-./pyuxn.py prog.rom
+uxnasm opctest.tal opctest.rom
+./pyuxn.py opctest.rom
 ```

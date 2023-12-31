@@ -526,12 +526,12 @@ OPS = {
     0x17: op_deo,
     0x18: op_add,
     0x19: op_sub,
-    0x1a: op_mul,
-    0x1b: op_div,
-    0x1c: op_and,
-    0x1d: op_ora,
-    0x1e: op_eor,
-    0x1f: op_sft,
+    0x1A: op_mul,
+    0x1B: op_div,
+    0x1C: op_and,
+    0x1D: op_ora,
+    0x1E: op_eor,
+    0x1F: op_sft,
 }
 
 
